@@ -1170,11 +1170,11 @@ function scanReceiptAmount() {
             const text = result.data.text;
             console.log('OCR Result:', text);
             
-            const amounts = extractAmountsFromScan(text);
-            console.log('Extracted amounts:', amounts);
+            const scanResult = extractAmountsFromScan(text);
+            console.log('Extracted:', scanResult);
             
-            if (amounts.length > 0) {
-                showAmountSelectionModal(amounts);
+            if (scanResult.amounts.length > 0) {
+                showAmountSelectionModal(scanResult.amounts, scanResult.date);
             } else {
                 alert('未識別到金額\n\n識別文字：\n' + text.substring(0, 200));
             }
@@ -1188,33 +1188,88 @@ function scanReceiptAmount() {
     input.click();
 }
 
-// 從掃描文字中提取金額
+// 從掃描文字中提取金額和日期
 function extractAmountsFromScan(text) {
-    const amounts = [];
+    const results = {
+        amounts: [],
+        date: null
+    };
     const seen = new Set();
     
-    // 匹配各種金額格式
-    const patterns = [
-        /\$\s*(\d+(?:,\d{3})*(?:\.\d{1,2})?)/g,
-        /(\d+(?:,\d{3})*(?:\.\d{1,2})?)/g
+    // 先嘗試提取日期 (格式: 2026-01-03 或 2026/01/03)
+    const datePatterns = [
+        /(\d{4}[-\/]\d{2}[-\/]\d{2})/,
+        /(\d{2}[-\/]\d{2}[-\/]\d{4})/
     ];
     
-    for (const pattern of patterns) {
-        let match;
-        while ((match = pattern.exec(text)) !== null) {
+    for (const pattern of datePatterns) {
+        const match = text.match(pattern);
+        if (match) {
+            let dateStr = match[1].replace(/\//g, '-');
+            // 如果是 DD-MM-YYYY 格式，轉換為 YYYY-MM-DD
+            if (dateStr.match(/^\d{2}-\d{2}-\d{4}$/)) {
+                const parts = dateStr.split('-');
+                dateStr = parts[2] + '-' + parts[1] + '-' + parts[0];
+            }
+            results.date = dateStr;
+            break;
+        }
+    }
+    
+    // 優先匹配「金額」「合計」「總計」「現金」旁邊的數字
+    const priorityPatterns = [
+        /金額[^\d]*\$?\s*(\d+(?:,\d{3})*(?:\.\d{1,2})?)/i,
+        /合計[^\d]*\$?\s*(\d+(?:,\d{3})*(?:\.\d{1,2})?)/i,
+        /總計[^\d]*\$?\s*(\d+(?:,\d{3})*(?:\.\d{1,2})?)/i,
+        /現金[^\d]*\$?\s*(\d+(?:,\d{3})*(?:\.\d{1,2})?)/i,
+        /Total[^\d]*\$?\s*(\d+(?:,\d{3})*(?:\.\d{1,2})?)/i
+    ];
+    
+    for (const pattern of priorityPatterns) {
+        const match = text.match(pattern);
+        if (match) {
             const numStr = match[1].replace(/,/g, '');
             const num = parseFloat(numStr);
-            // 過濾合理的金額範圍
             if (num >= 1 && num <= 100000 && !seen.has(num)) {
                 seen.add(num);
-                amounts.push(num);
+                results.amounts.unshift(num); // 優先放在前面
             }
         }
     }
     
-    // 按金額大小排序
-    amounts.sort((a, b) => b - a);
-    return amounts.slice(0, 6);
+    // 然後匹配所有 $ 符號後的數字
+    const dollarPattern = /\$\s*(\d+(?:,\d{3})*(?:\.\d{1,2})?)/g;
+    let match;
+    while ((match = dollarPattern.exec(text)) !== null) {
+        const numStr = match[1].replace(/,/g, '');
+        const num = parseFloat(numStr);
+        if (num >= 10 && num <= 100000 && !seen.has(num)) {
+            seen.add(num);
+            results.amounts.push(num);
+        }
+    }
+    
+    // 一般數字模式
+    const patterns = [
+        /(\d+(?:,\d{3})*(?:\.\d{1,2})?)/g
+    ];
+    
+    for (const pattern of patterns) {
+        let match2;
+        while ((match2 = pattern.exec(text)) !== null) {
+            const numStr = match2[1].replace(/,/g, '');
+            const num = parseFloat(numStr);
+            // 過濾合理的金額範圍（排除年份等）
+            if (num >= 10 && num <= 100000 && !seen.has(num) && num !== 2026 && num !== 2025) {
+                seen.add(num);
+                results.amounts.push(num);
+            }
+        }
+    }
+    
+    // 限制數量
+    results.amounts = results.amounts.slice(0, 8);
+    return results;
 }
 
 // 顯示掃描中 Modal
@@ -1248,7 +1303,7 @@ function hideAmountScanModal() {
 }
 
 // 顯示金額選擇 Modal
-function showAmountSelectionModal(amounts) {
+function showAmountSelectionModal(amounts, date) {
     let modal = document.getElementById('amountSelectionModal');
     if (!modal) {
         modal = document.createElement('div');
@@ -1257,20 +1312,36 @@ function showAmountSelectionModal(amounts) {
         document.body.appendChild(modal);
     }
     
-    const options = amounts.map(amt => `
-        <div class="amount-option" onclick="selectScannedAmount(${amt})">
+    // 儲存日期供後續使用
+    window._scannedDate = date;
+    
+    const options = amounts.map((amt, idx) => `
+        <div class="amount-option" onclick="selectScannedAmount(${amt})" style="${idx === 0 ? 'background: #f0e6ff; border: 2px solid #8B5CF6;' : ''}">
             <span class="amount-value">$${amt.toLocaleString()}</span>
+            ${idx === 0 ? '<span style="font-size: 11px; color: #8B5CF6; margin-left: 8px;">推薦</span>' : ''}
         </div>
     `).join('');
+    
+    const dateSection = date ? `
+        <div style="margin-bottom: 16px; padding: 12px; background: #f0f9ff; border-radius: 8px;">
+            <p style="color: #666; font-size: 12px; margin-bottom: 4px;">識別到日期：</p>
+            <p style="font-weight: 600; color: #3B82F6;">${date}</p>
+            <label style="display: flex; align-items: center; margin-top: 8px; cursor: pointer;">
+                <input type="checkbox" id="useScannedDate" checked style="margin-right: 8px;">
+                <span style="font-size: 13px;">使用此日期</span>
+            </label>
+        </div>
+    ` : '';
     
     modal.innerHTML = `
         <div class="modal-content" style="max-width: 350px;">
             <div class="modal-header">
-                <h3>選擇金額</h3>
+                <h3>📷 識別結果</h3>
                 <button class="close-btn" onclick="closeAmountSelectionModal()">&times;</button>
             </div>
             <div style="padding: 0 0 16px;">
-                <p style="color: #666; margin-bottom: 12px;">識別到以下金額，請選擇：</p>
+                ${dateSection}
+                <p style="color: #666; margin-bottom: 12px;">請選擇金額：</p>
                 ${options}
             </div>
             <div class="modal-actions">
@@ -1283,6 +1354,13 @@ function showAmountSelectionModal(amounts) {
 
 function selectScannedAmount(amount) {
     document.getElementById('transactionAmount').value = amount;
+    
+    // 如果有識別到日期且用戶勾選使用
+    const useDate = document.getElementById('useScannedDate');
+    if (useDate && useDate.checked && window._scannedDate) {
+        document.getElementById('transactionDate').value = window._scannedDate;
+    }
+    
     closeAmountSelectionModal();
 }
 
