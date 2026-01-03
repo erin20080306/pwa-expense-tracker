@@ -105,11 +105,10 @@ class ExpenseDB {
             const transaction = this.db.transaction(['transactions'], 'readwrite');
             const store = transaction.objectStore('transactions');
             
-            // 確保 ID 是數字
-            const numId = typeof id === 'string' ? parseInt(id) : id;
-            console.log('Deleting with numId:', numId);
+            // 直接使用原始 ID（可能是字串或數字）
+            console.log('Deleting with id:', id);
             
-            const request = store.delete(numId);
+            const request = store.delete(id);
 
             request.onsuccess = () => {
                 console.log('Delete request succeeded');
@@ -277,23 +276,21 @@ class ExpenseDB {
     // Budget operations
     async getBudget(month = null) {
         return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(['budgets'], 'readonly');
-            const store = transaction.objectStore('budgets');
-            
-            if (month) {
-                const index = store.index('month');
-                const request = index.get(month);
-                request.onsuccess = () => resolve(request.result);
-                request.onerror = () => reject(request.error);
-            } else {
+            try {
+                const transaction = this.db.transaction(['budgets'], 'readonly');
+                const store = transaction.objectStore('budgets');
+                
                 const request = store.getAll();
                 request.onsuccess = () => {
-                    const budgets = request.result;
-                    const currentMonth = new Date().toISOString().slice(0, 7);
-                    const currentBudget = budgets.find(b => b.month === currentMonth);
-                    resolve(currentBudget || { amount: 0, savingsGoal: 0 });
+                    const budgets = request.result || [];
+                    const targetMonth = month || new Date().toISOString().slice(0, 7);
+                    const budget = budgets.find(b => b.month === targetMonth);
+                    resolve(budget || { amount: 0, savingsGoal: 0 });
                 };
                 request.onerror = () => reject(request.error);
+            } catch (error) {
+                console.error('getBudget error:', error);
+                resolve({ amount: 0, savingsGoal: 0 });
             }
         });
     }

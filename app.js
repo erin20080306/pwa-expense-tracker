@@ -877,15 +877,14 @@ function editTransaction(transaction) {
 
 // 刪除交易
 async function deleteTransaction() {
-    const idStr = document.getElementById('editTransactionId').value;
-    console.log('Delete transaction called, id:', idStr);
+    const id = document.getElementById('editTransactionId').value;
+    console.log('Delete transaction called, id:', id);
     
-    if (!idStr) {
+    if (!id) {
         console.error('No transaction ID found');
+        alert('找不到交易 ID');
         return;
     }
-    
-    const id = parseInt(idStr);
     
     if (confirm('確定要刪除這筆交易嗎？')) {
         try {
