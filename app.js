@@ -865,18 +865,27 @@ function editTransaction(transaction) {
 
 // 刪除交易
 async function deleteTransaction() {
-    const id = document.getElementById('editTransactionId').value;
-    if (!id) return;
+    const idStr = document.getElementById('editTransactionId').value;
+    console.log('Delete transaction called, id:', idStr);
+    
+    if (!idStr) {
+        console.error('No transaction ID found');
+        return;
+    }
+    
+    const id = parseInt(idStr);
     
     if (confirm('確定要刪除這筆交易嗎？')) {
         try {
-            await db.deleteTransaction(parseInt(id));
+            console.log('Deleting transaction with id:', id);
+            await db.deleteTransaction(id);
+            console.log('Transaction deleted successfully');
             closeAddTransaction();
-            app.updateAllData();
+            await app.updateAllData();
             alert('已刪除');
         } catch (error) {
             console.error('Error deleting transaction:', error);
-            alert('刪除失敗，請重試。');
+            alert('刪除失敗：' + error.message);
         }
     }
 }
