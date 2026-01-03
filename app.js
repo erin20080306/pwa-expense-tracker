@@ -1118,52 +1118,73 @@ function importData() {
 
 // 掃描金額功能
 function scanReceiptAmount() {
+    console.log('scanReceiptAmount called');
+    
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
     input.capture = 'environment';
+    
     input.onchange = async (e) => {
+        console.log('File selected');
         const file = e.target.files[0];
-        if (!file) return;
+        if (!file) {
+            console.log('No file selected');
+            return;
+        }
+        
+        console.log('File:', file.name, file.size);
         
         // 顯示載入中
         showAmountScanModal();
         
         try {
-            // 使用 Tesseract 只識別數字
-            if (typeof Tesseract !== 'undefined') {
-                const result = await Tesseract.recognize(file, 'eng', {
-                    tessedit_char_whitelist: '0123456789.$,',
-                    logger: m => {
-                        if (m.status === 'recognizing text') {
-                            updateAmountScanProgress(Math.round(m.progress * 100));
-                        }
+            // 檢查 Tesseract
+            console.log('Tesseract available:', typeof Tesseract !== 'undefined');
+            
+            if (typeof Tesseract === 'undefined') {
+                hideAmountScanModal();
+                alert('OCR 功能尚未載入，請重新整理頁面後再試');
+                return;
+            }
+            
+            console.log('Starting Tesseract recognition...');
+            
+            const result = await Tesseract.recognize(file, 'eng', {
+                logger: m => {
+                    console.log('Tesseract:', m.status, m.progress);
+                    if (m.status === 'recognizing text') {
+                        updateAmountScanProgress(Math.round(m.progress * 100));
+                    } else if (m.status === 'loading language traineddata') {
+                        updateAmountScanProgress(0);
+                        const msgEl = document.querySelector('#amountScanModal p');
+                        if (msgEl) msgEl.textContent = '載入語言包...';
                     }
-                });
-                
-                hideAmountScanModal();
-                
-                // 從結果中提取所有數字
-                const text = result.data.text;
-                console.log('Scan result:', text);
-                
-                const amounts = extractAmountsFromScan(text);
-                
-                if (amounts.length > 0) {
-                    showAmountSelectionModal(amounts);
-                } else {
-                    alert('未識別到金額，請重試或手動輸入');
                 }
+            });
+            
+            console.log('Recognition complete');
+            hideAmountScanModal();
+            
+            // 從結果中提取所有數字
+            const text = result.data.text;
+            console.log('OCR Result:', text);
+            
+            const amounts = extractAmountsFromScan(text);
+            console.log('Extracted amounts:', amounts);
+            
+            if (amounts.length > 0) {
+                showAmountSelectionModal(amounts);
             } else {
-                hideAmountScanModal();
-                alert('掃描功能載入中，請稍後再試');
+                alert('未識別到金額\n\n識別文字：\n' + text.substring(0, 200));
             }
         } catch (error) {
             hideAmountScanModal();
             console.error('Scan error:', error);
-            alert('掃描失敗：' + error.message);
+            alert('掃描失敗：' + (error.message || error));
         }
     };
+    
     input.click();
 }
 
