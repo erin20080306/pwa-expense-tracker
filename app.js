@@ -1116,34 +1116,6 @@ function importData() {
     app.importData();
 }
 
-// Tesseract Worker（全局，避免重複載入語言包）
-let tesseractWorker = null;
-
-async function getTesseractWorker() {
-    if (tesseractWorker) {
-        return tesseractWorker;
-    }
-    
-    if (typeof Tesseract === 'undefined') {
-        throw new Error('Tesseract 尚未載入');
-    }
-    
-    console.log('Creating Tesseract worker...');
-    tesseractWorker = await Tesseract.createWorker('eng', 1, {
-        logger: m => {
-            console.log('Tesseract:', m.status, m.progress);
-            if (m.status === 'loading language traineddata') {
-                const msgEl = document.querySelector('#amountScanModal p');
-                if (msgEl) msgEl.textContent = '首次載入語言包...';
-            }
-        },
-        cacheMethod: 'readOnly'
-    });
-    
-    console.log('Tesseract worker ready');
-    return tesseractWorker;
-}
-
 // 掃描金額功能
 function scanReceiptAmount() {
     console.log('scanReceiptAmount called');
@@ -1167,13 +1139,24 @@ function scanReceiptAmount() {
         showAmountScanModal();
         
         try {
-            // 獲取或創建 Worker
-            const worker = await getTesseractWorker();
+            if (typeof Tesseract === 'undefined') {
+                throw new Error('OCR 功能尚未載入');
+            }
             
             console.log('Starting recognition...');
             updateAmountScanProgress(0);
             
-            const result = await worker.recognize(file);
+            const result = await Tesseract.recognize(file, 'eng', {
+                logger: m => {
+                    console.log('Tesseract:', m.status, m.progress);
+                    if (m.status === 'recognizing text') {
+                        updateAmountScanProgress(Math.round(m.progress * 100));
+                    } else if (m.status === 'loading language traineddata') {
+                        const msgEl = document.querySelector('#amountScanModal p');
+                        if (msgEl) msgEl.textContent = '載入語言包...';
+                    }
+                }
+            });
             
             console.log('Recognition complete');
             hideAmountScanModal();
