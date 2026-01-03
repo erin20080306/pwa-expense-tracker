@@ -1116,6 +1116,72 @@ function importData() {
     app.importData();
 }
 
+// 掃描收據功能
+function scanReceipt() {
+    const fileInput = document.getElementById('receiptFileInput');
+    if (fileInput) {
+        fileInput.click();
+    } else {
+        alert('找不到文件輸入元素');
+    }
+}
+
+// 處理收據文件
+async function handleReceiptFile(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    try {
+        // 檢查是否有 Tesseract
+        if (typeof Tesseract === 'undefined') {
+            alert('OCR 功能需要 Tesseract.js，請稍後再試。');
+            return;
+        }
+        
+        alert('正在掃描收據，請稍候...');
+        
+        const result = await Tesseract.recognize(file, 'chi_tra+eng', {
+            logger: m => console.log(m)
+        });
+        
+        console.log('OCR Result:', result.data.text);
+        
+        // 提取金額
+        const amount = extractAmountFromText(result.data.text);
+        if (amount) {
+            document.getElementById('transactionAmount').value = amount;
+            alert('已識別金額：' + amount);
+        } else {
+            alert('無法識別金額，請手動輸入。\n\n識別文字：\n' + result.data.text.substring(0, 200));
+        }
+    } catch (error) {
+        console.error('Error scanning receipt:', error);
+        alert('掃描失敗：' + error.message);
+    }
+}
+
+function extractAmountFromText(text) {
+    // 匹配各種金額格式
+    const patterns = [
+        /總計[：:]\s*\$?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/,
+        /合計[：:]\s*\$?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/,
+        /金額[：:]\s*\$?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/,
+        /Total[：:]\s*\$?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
+        /\$\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/,
+        /NT\$?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/,
+        /(\d+(?:,\d{3})*(?:\.\d{2})?)\s*元/
+    ];
+    
+    for (const pattern of patterns) {
+        const match = text.match(pattern);
+        if (match && match[1]) {
+            return parseFloat(match[1].replace(/,/g, ''));
+        }
+    }
+    
+    return null;
+}
+
 // Initialize app when DOM is loaded
 let app;
 document.addEventListener('DOMContentLoaded', () => {

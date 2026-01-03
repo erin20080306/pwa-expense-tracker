@@ -531,7 +531,7 @@
     </div>
 
     <!-- Hidden file input for receipt scanning -->
-    <input type="file" id="receiptFileInput" accept="image/*" style="display: none;">
+    <input type="file" id="receiptFileInput" accept="image/*" style="display: none;" onchange="handleReceiptFile(event)">
 
     <script src="db.js"></script>
     <script src="app.js"></script>
