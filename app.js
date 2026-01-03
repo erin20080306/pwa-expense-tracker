@@ -15,7 +15,8 @@ class ExpenseTracker {
             // Initialize database
             await db.init();
             await initializeDefaultCategories();
-            await initializeSampleData();
+            // 不再自動添加範例資料，讓用戶自己添加交易
+            // await initializeSampleData();
             
             // Initialize app
             this.setupEventListeners();
