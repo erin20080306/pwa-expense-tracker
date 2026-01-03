@@ -95,12 +95,37 @@ class ExpenseDB {
 
     async deleteTransaction(id) {
         return new Promise((resolve, reject) => {
+            console.log('DB deleteTransaction called with id:', id, 'type:', typeof id);
+            
+            if (!this.db) {
+                reject(new Error('Database not initialized'));
+                return;
+            }
+            
             const transaction = this.db.transaction(['transactions'], 'readwrite');
             const store = transaction.objectStore('transactions');
-            const request = store.delete(id);
+            
+            // 確保 ID 是數字
+            const numId = typeof id === 'string' ? parseInt(id) : id;
+            console.log('Deleting with numId:', numId);
+            
+            const request = store.delete(numId);
 
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+                console.log('Delete request succeeded');
+                resolve();
+            };
+            request.onerror = () => {
+                console.error('Delete request failed:', request.error);
+                reject(request.error);
+            };
+            
+            transaction.oncomplete = () => {
+                console.log('Delete transaction completed');
+            };
+            transaction.onerror = () => {
+                console.error('Delete transaction error:', transaction.error);
+            };
         });
     }
 
