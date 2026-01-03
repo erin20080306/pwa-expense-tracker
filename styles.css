@@ -1318,3 +1318,77 @@ input:checked + .slider:before {
 ::-webkit-scrollbar-thumb:hover {
     background: #a8a8a8;
 }
+
+/* QR Scanner Styles */
+.scan-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.scan-buttons .scan-receipt-btn {
+    flex: 1;
+    font-size: 12px;
+    padding: 10px 8px;
+}
+
+.qr-scanner-content {
+    max-width: 400px;
+}
+
+.scanner-container {
+    position: relative;
+    width: 100%;
+    height: 280px;
+    background: #000;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+#qrVideo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.scanner-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.scanner-frame {
+    width: 200px;
+    height: 200px;
+    border: 3px solid #8B5CF6;
+    border-radius: 12px;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+}
+
+.scanner-hint {
+    text-align: center;
+    color: #666;
+    font-size: 14px;
+    margin: 12px 0;
+}
+
+.qr-result {
+    background: #f0f9ff;
+    padding: 12px;
+    border-radius: 8px;
+    margin: 12px 0;
+}
+
+.qr-result p {
+    margin: 4px 0;
+    word-break: break-all;
+}
+
+#qrResultText {
+    font-weight: 600;
+    color: #8B5CF6;
+}

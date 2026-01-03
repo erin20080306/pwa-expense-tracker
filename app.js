@@ -1182,6 +1182,157 @@ function extractAmountFromText(text) {
     return null;
 }
 
+// QR/條碼掃描功能（使用瀏覽器內建 API）
+let qrVideoStream = null;
+let barcodeDetector = null;
+let scanInterval = null;
+
+async function openQRScanner() {
+    const modal = document.getElementById('qrScannerModal');
+    const video = document.getElementById('qrVideo');
+    const resultDiv = document.getElementById('qrResult');
+    
+    modal.style.display = 'flex';
+    resultDiv.style.display = 'none';
+    
+    // 檢查是否支援 BarcodeDetector API
+    if ('BarcodeDetector' in window) {
+        try {
+            barcodeDetector = new BarcodeDetector({
+                formats: ['qr_code', 'ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e']
+            });
+        } catch (e) {
+            console.log('BarcodeDetector not fully supported:', e);
+        }
+    }
+    
+    try {
+        // 請求相機權限
+        qrVideoStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' }
+        });
+        video.srcObject = qrVideoStream;
+        
+        // 開始掃描
+        video.onloadedmetadata = () => {
+            startScanning();
+        };
+    } catch (error) {
+        console.error('Camera access error:', error);
+        alert('無法存取相機。請確認已授予相機權限。');
+        closeQRScanner();
+    }
+}
+
+function startScanning() {
+    const video = document.getElementById('qrVideo');
+    const canvas = document.getElementById('qrCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    
+    scanInterval = setInterval(async () => {
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // 使用 BarcodeDetector API（如果支援）
+            if (barcodeDetector) {
+                try {
+                    const barcodes = await barcodeDetector.detect(canvas);
+                    if (barcodes.length > 0) {
+                        handleScanResult(barcodes[0].rawValue);
+                        return;
+                    }
+                } catch (e) {
+                    // 繼續掃描
+                }
+            }
+        }
+    }, 200);
+}
+
+function handleScanResult(result) {
+    console.log('Scan result:', result);
+    
+    // 停止掃描
+    if (scanInterval) {
+        clearInterval(scanInterval);
+        scanInterval = null;
+    }
+    
+    // 顯示結果
+    const resultDiv = document.getElementById('qrResult');
+    const resultText = document.getElementById('qrResultText');
+    resultDiv.style.display = 'block';
+    resultText.textContent = result;
+    
+    // 嘗試從結果中提取金額
+    const amount = extractAmountFromQR(result);
+    if (amount) {
+        document.getElementById('transactionAmount').value = amount;
+        alert('已識別金額：' + amount);
+        closeQRScanner();
+    } else {
+        // 如果是網址，顯示提示
+        if (result.startsWith('http')) {
+            if (confirm('掃描到網址：\n' + result + '\n\n是否開啟？')) {
+                window.open(result, '_blank');
+            }
+        } else {
+            // 將結果填入備註
+            document.getElementById('transactionNote').value = result;
+            alert('已將掃描結果填入備註');
+            closeQRScanner();
+        }
+    }
+}
+
+function extractAmountFromQR(text) {
+    // 嘗試從 QR 碼內容提取金額
+    const patterns = [
+        /金額[：:]\s*(\d+(?:\.\d{2})?)/,
+        /amount[：:]\s*(\d+(?:\.\d{2})?)/i,
+        /total[：:]\s*(\d+(?:\.\d{2})?)/i,
+        /\$(\d+(?:\.\d{2})?)/,
+        /NT\$?(\d+(?:\.\d{2})?)/
+    ];
+    
+    for (const pattern of patterns) {
+        const match = text.match(pattern);
+        if (match && match[1]) {
+            return parseFloat(match[1]);
+        }
+    }
+    
+    // 如果整個內容就是數字
+    if (/^\d+(\.\d{2})?$/.test(text.trim())) {
+        return parseFloat(text.trim());
+    }
+    
+    return null;
+}
+
+function closeQRScanner() {
+    const modal = document.getElementById('qrScannerModal');
+    const video = document.getElementById('qrVideo');
+    
+    // 停止掃描
+    if (scanInterval) {
+        clearInterval(scanInterval);
+        scanInterval = null;
+    }
+    
+    // 停止相機
+    if (qrVideoStream) {
+        qrVideoStream.getTracks().forEach(track => track.stop());
+        qrVideoStream = null;
+    }
+    
+    video.srcObject = null;
+    modal.style.display = 'none';
+}
+
 // Initialize app when DOM is loaded
 let app;
 document.addEventListener('DOMContentLoaded', () => {
