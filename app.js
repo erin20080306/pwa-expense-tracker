@@ -1139,9 +1139,15 @@ async function handleReceiptFile(event) {
         }
         
         // 顯示掃描中提示
-        showScanningModal('正在掃描收據...');
+        showScanningModal('正在處理圖片...');
         
-        const result = await Tesseract.recognize(file, 'chi_tra+eng', {
+        // 預處理圖片以提高識別率
+        const processedImage = await preprocessImage(file);
+        
+        document.getElementById('scanningMessage').textContent = '正在識別文字...';
+        
+        // 使用英文識別數字和金額（更準確）
+        const result = await Tesseract.recognize(processedImage, 'eng', {
             logger: m => {
                 if (m.status === 'recognizing text') {
                     updateScanningProgress(Math.round(m.progress * 100));
@@ -1168,6 +1174,56 @@ async function handleReceiptFile(event) {
         console.error('Error scanning receipt:', error);
         alert('掃描失敗：' + error.message);
     }
+}
+
+// 圖片預處理 - 提高 OCR 識別率
+async function preprocessImage(file) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        img.onload = () => {
+            // 設定畫布大小（放大圖片可以提高識別率）
+            const scale = Math.max(1, 1500 / Math.max(img.width, img.height));
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            
+            // 繪製白色背景
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // 繪製圖片
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            
+            // 獲取圖片數據
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            
+            // 轉換為灰階並增加對比度
+            for (let i = 0; i < data.length; i += 4) {
+                // 灰階轉換
+                const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                
+                // 增加對比度（二值化處理）
+                const threshold = 128;
+                const value = gray > threshold ? 255 : 0;
+                
+                data[i] = value;     // R
+                data[i + 1] = value; // G
+                data[i + 2] = value; // B
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            
+            // 返回處理後的圖片
+            canvas.toBlob((blob) => {
+                resolve(blob);
+            }, 'image/png');
+        };
+        
+        img.src = URL.createObjectURL(file);
+    });
 }
 
 // 顯示掃描中 Modal
