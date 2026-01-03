@@ -839,7 +839,18 @@ function closeAddTransaction() {
 
 // 編輯交易
 function editTransaction(transaction) {
-    document.getElementById('editTransactionId').value = transaction.id;
+    console.log('editTransaction called with:', transaction);
+    console.log('Transaction ID:', transaction.id, 'Type:', typeof transaction.id);
+    
+    const idInput = document.getElementById('editTransactionId');
+    if (!idInput) {
+        console.error('editTransactionId input not found!');
+        return;
+    }
+    
+    idInput.value = String(transaction.id);
+    console.log('Set editTransactionId to:', idInput.value);
+    
     document.getElementById('transactionSheetTitle').textContent = '編輯交易';
     document.getElementById('transactionAmount').value = transaction.amount;
     document.getElementById('transactionNote').value = transaction.note || '';
