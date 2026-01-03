@@ -1,5 +1,5 @@
 // Service Worker for Expense Tracker PWA
-const CACHE_NAME = 'expense-tracker-v1';
+const CACHE_NAME = 'expense-tracker-v2';
 const STATIC_ASSETS = [
     '/',
     '/index.html',
@@ -62,15 +62,41 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Skip cross-origin requests except for fonts and CDN
+    // Skip cross-origin requests except for fonts, CDN, and Tesseract
     const url = new URL(event.request.url);
     const isAllowedOrigin = 
         url.origin === self.location.origin ||
         url.origin === 'https://fonts.googleapis.com' ||
         url.origin === 'https://fonts.gstatic.com' ||
-        url.origin === 'https://cdn.jsdelivr.net';
+        url.origin === 'https://cdn.jsdelivr.net' ||
+        url.origin === 'https://unpkg.com' ||
+        url.hostname.includes('tessdata') ||
+        url.pathname.includes('traineddata');
 
     if (!isAllowedOrigin) {
+        return;
+    }
+    
+    // 對 Tesseract 語言包使用快取優先策略
+    if (url.pathname.includes('traineddata') || url.pathname.includes('tessdata')) {
+        event.respondWith(
+            caches.match(event.request).then(cachedResponse => {
+                if (cachedResponse) {
+                    console.log('[SW] Serving Tesseract from cache');
+                    return cachedResponse;
+                }
+                console.log('[SW] Fetching Tesseract from network');
+                return fetch(event.request).then(response => {
+                    if (response && response.status === 200) {
+                        const responseClone = response.clone();
+                        caches.open(CACHE_NAME).then(cache => {
+                            cache.put(event.request, responseClone);
+                        });
+                    }
+                    return response;
+                });
+            })
+        );
         return;
     }
 
