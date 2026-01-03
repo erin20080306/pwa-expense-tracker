@@ -1196,6 +1196,8 @@ function extractAmountsFromScan(text) {
     };
     const seen = new Set();
     
+    console.log('Raw OCR text:', text);
+    
     // 先嘗試提取日期 (格式: 2026-01-03 或 2026/01/03)
     const datePatterns = [
         /(\d{4}[-\/]\d{2}[-\/]\d{2})/,
@@ -1216,40 +1218,41 @@ function extractAmountsFromScan(text) {
         }
     }
     
-    // 優先匹配「金額」「合計」「總計」「現金」旁邊的數字
-    const priorityPatterns = [
-        /金額[^\d]*\$?\s*(\d+(?:,\d{3})*(?:\.\d{1,2})?)/i,
-        /合計[^\d]*\$?\s*(\d+(?:,\d{3})*(?:\.\d{1,2})?)/i,
-        /總計[^\d]*\$?\s*(\d+(?:,\d{3})*(?:\.\d{1,2})?)/i,
-        /現金[^\d]*\$?\s*(\d+(?:,\d{3})*(?:\.\d{1,2})?)/i,
-        /Total[^\d]*\$?\s*(\d+(?:,\d{3})*(?:\.\d{1,2})?)/i
-    ];
-    
-    for (const pattern of priorityPatterns) {
-        const match = text.match(pattern);
-        if (match) {
-            const numStr = match[1].replace(/,/g, '');
-            const num = parseFloat(numStr);
-            if (num >= 1 && num <= 100000 && !seen.has(num)) {
-                seen.add(num);
-                results.amounts.unshift(num); // 優先放在前面
-            }
-        }
-    }
-    
-    // 然後匹配所有 $ 符號後的數字
+    // 收集所有 $ 符號後的數字
+    const allDollarAmounts = [];
     const dollarPattern = /\$\s*(\d+(?:,\d{3})*(?:\.\d{1,2})?)/g;
     let match;
     while ((match = dollarPattern.exec(text)) !== null) {
         const numStr = match[1].replace(/,/g, '');
         const num = parseFloat(numStr);
-        if (num >= 10 && num <= 100000 && !seen.has(num)) {
+        if (num >= 1 && num <= 100000) {
+            allDollarAmounts.push(num);
+        }
+    }
+    
+    console.log('All dollar amounts found:', allDollarAmounts);
+    
+    // 找出最大的金額（通常是總計）
+    if (allDollarAmounts.length > 0) {
+        const maxAmount = Math.max(...allDollarAmounts);
+        // 如果最大金額出現多次（如 金額 $521 和 現金 $521），更可能是總計
+        const maxCount = allDollarAmounts.filter(a => a === maxAmount).length;
+        if (maxCount >= 1 && maxAmount >= 50) {
+            seen.add(maxAmount);
+            results.amounts.push(maxAmount);
+        }
+    }
+    
+    // 添加其他金額（按大小排序）
+    const sortedAmounts = [...new Set(allDollarAmounts)].sort((a, b) => b - a);
+    for (const num of sortedAmounts) {
+        if (!seen.has(num) && num >= 10 && num <= 100000) {
             seen.add(num);
             results.amounts.push(num);
         }
     }
     
-    // 一般數字模式
+    // 一般數字模式（備用）
     const patterns = [
         /(\d+(?:,\d{3})*(?:\.\d{1,2})?)/g
     ];
