@@ -1116,240 +1116,158 @@ function importData() {
     app.importData();
 }
 
-// 掃描收據功能
-function scanReceipt() {
-    const fileInput = document.getElementById('receiptFileInput');
-    if (fileInput) {
-        fileInput.click();
-    } else {
-        alert('找不到文件輸入元素');
-    }
-}
-
-// 處理收據文件
-async function handleReceiptFile(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    try {
-        // 檢查是否有 Tesseract
-        if (typeof Tesseract === 'undefined') {
-            alert('OCR 功能需要 Tesseract.js，請稍後再試。');
-            return;
-        }
+// 掃描金額功能
+function scanReceiptAmount() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.capture = 'environment';
+    input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
         
-        // 顯示掃描中提示
-        showScanningModal('正在處理圖片...');
+        // 顯示載入中
+        showAmountScanModal();
         
-        // 預處理圖片以提高識別率
-        const processedImage = await preprocessImage(file);
-        
-        document.getElementById('scanningMessage').textContent = '正在識別文字...';
-        
-        // 使用英文識別數字和金額（更準確）
-        const result = await Tesseract.recognize(processedImage, 'eng', {
-            logger: m => {
-                if (m.status === 'recognizing text') {
-                    updateScanningProgress(Math.round(m.progress * 100));
+        try {
+            // 使用 Tesseract 只識別數字
+            if (typeof Tesseract !== 'undefined') {
+                const result = await Tesseract.recognize(file, 'eng', {
+                    tessedit_char_whitelist: '0123456789.$,',
+                    logger: m => {
+                        if (m.status === 'recognizing text') {
+                            updateAmountScanProgress(Math.round(m.progress * 100));
+                        }
+                    }
+                });
+                
+                hideAmountScanModal();
+                
+                // 從結果中提取所有數字
+                const text = result.data.text;
+                console.log('Scan result:', text);
+                
+                const amounts = extractAmountsFromScan(text);
+                
+                if (amounts.length > 0) {
+                    showAmountSelectionModal(amounts);
+                } else {
+                    alert('未識別到金額，請重試或手動輸入');
                 }
+            } else {
+                hideAmountScanModal();
+                alert('掃描功能載入中，請稍後再試');
             }
-        });
-        
-        hideScanningModal();
-        
-        const ocrText = result.data.text;
-        console.log('OCR Result:', ocrText);
-        
-        // 提取所有可能的金額
-        const amounts = extractAllAmountsFromText(ocrText);
-        
-        if (amounts.length > 0) {
-            // 顯示識別結果讓用戶選擇
-            showReceiptResultModal(ocrText, amounts);
-        } else {
-            alert('無法識別金額，請手動輸入。\n\n識別文字：\n' + ocrText.substring(0, 300));
+        } catch (error) {
+            hideAmountScanModal();
+            console.error('Scan error:', error);
+            alert('掃描失敗：' + error.message);
         }
-    } catch (error) {
-        hideScanningModal();
-        console.error('Error scanning receipt:', error);
-        alert('掃描失敗：' + error.message);
-    }
+    };
+    input.click();
 }
 
-// 圖片預處理 - 提高 OCR 識別率
-async function preprocessImage(file) {
-    return new Promise((resolve) => {
-        const img = new Image();
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        
-        img.onload = () => {
-            // 設定畫布大小（放大圖片可以提高識別率）
-            const scale = Math.max(1, 1500 / Math.max(img.width, img.height));
-            canvas.width = img.width * scale;
-            canvas.height = img.height * scale;
-            
-            // 繪製白色背景
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // 繪製圖片
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            
-            // 獲取圖片數據
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const data = imageData.data;
-            
-            // 轉換為灰階並增加對比度
-            for (let i = 0; i < data.length; i += 4) {
-                // 灰階轉換
-                const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-                
-                // 增加對比度（二值化處理）
-                const threshold = 128;
-                const value = gray > threshold ? 255 : 0;
-                
-                data[i] = value;     // R
-                data[i + 1] = value; // G
-                data[i + 2] = value; // B
+// 從掃描文字中提取金額
+function extractAmountsFromScan(text) {
+    const amounts = [];
+    const seen = new Set();
+    
+    // 匹配各種金額格式
+    const patterns = [
+        /\$\s*(\d+(?:,\d{3})*(?:\.\d{1,2})?)/g,
+        /(\d+(?:,\d{3})*(?:\.\d{1,2})?)/g
+    ];
+    
+    for (const pattern of patterns) {
+        let match;
+        while ((match = pattern.exec(text)) !== null) {
+            const numStr = match[1].replace(/,/g, '');
+            const num = parseFloat(numStr);
+            // 過濾合理的金額範圍
+            if (num >= 1 && num <= 100000 && !seen.has(num)) {
+                seen.add(num);
+                amounts.push(num);
             }
-            
-            ctx.putImageData(imageData, 0, 0);
-            
-            // 返回處理後的圖片
-            canvas.toBlob((blob) => {
-                resolve(blob);
-            }, 'image/png');
-        };
-        
-        img.src = URL.createObjectURL(file);
-    });
+        }
+    }
+    
+    // 按金額大小排序
+    amounts.sort((a, b) => b - a);
+    return amounts.slice(0, 6);
 }
 
 // 顯示掃描中 Modal
-function showScanningModal(message) {
-    let modal = document.getElementById('scanningModal');
+function showAmountScanModal() {
+    let modal = document.getElementById('amountScanModal');
     if (!modal) {
         modal = document.createElement('div');
-        modal.id = 'scanningModal';
+        modal.id = 'amountScanModal';
         modal.className = 'modal';
         modal.innerHTML = `
-            <div class="modal-content" style="text-align: center; padding: 30px;">
+            <div class="modal-content" style="text-align: center; padding: 30px; max-width: 300px;">
                 <div class="scanning-spinner"></div>
-                <p id="scanningMessage">${message}</p>
-                <p id="scanningProgress">0%</p>
+                <p style="margin: 16px 0 8px;">正在識別金額...</p>
+                <p id="amountScanProgress" style="color: #8B5CF6; font-weight: 600;">0%</p>
             </div>
         `;
         document.body.appendChild(modal);
     }
-    document.getElementById('scanningMessage').textContent = message;
-    document.getElementById('scanningProgress').textContent = '0%';
+    document.getElementById('amountScanProgress').textContent = '0%';
     modal.style.display = 'flex';
 }
 
-function updateScanningProgress(percent) {
-    const el = document.getElementById('scanningProgress');
+function updateAmountScanProgress(percent) {
+    const el = document.getElementById('amountScanProgress');
     if (el) el.textContent = percent + '%';
 }
 
-function hideScanningModal() {
-    const modal = document.getElementById('scanningModal');
+function hideAmountScanModal() {
+    const modal = document.getElementById('amountScanModal');
     if (modal) modal.style.display = 'none';
 }
 
-// 顯示收據識別結果
-function showReceiptResultModal(ocrText, amounts) {
-    let modal = document.getElementById('receiptResultModal');
+// 顯示金額選擇 Modal
+function showAmountSelectionModal(amounts) {
+    let modal = document.getElementById('amountSelectionModal');
     if (!modal) {
         modal = document.createElement('div');
-        modal.id = 'receiptResultModal';
+        modal.id = 'amountSelectionModal';
         modal.className = 'modal';
         document.body.appendChild(modal);
     }
     
-    // 建立金額選項
-    let amountOptions = amounts.map((item, index) => `
-        <div class="amount-option" onclick="selectReceiptAmount(${item.amount})">
-            <span class="amount-label">${item.label}</span>
-            <span class="amount-value">$${item.amount.toLocaleString()}</span>
+    const options = amounts.map(amt => `
+        <div class="amount-option" onclick="selectScannedAmount(${amt})">
+            <span class="amount-value">$${amt.toLocaleString()}</span>
         </div>
     `).join('');
     
     modal.innerHTML = `
-        <div class="modal-content receipt-result-content">
+        <div class="modal-content" style="max-width: 350px;">
             <div class="modal-header">
-                <h3>識別結果</h3>
-                <button class="close-btn" onclick="closeReceiptResultModal()">&times;</button>
+                <h3>選擇金額</h3>
+                <button class="close-btn" onclick="closeAmountSelectionModal()">&times;</button>
             </div>
-            <div class="receipt-amounts">
-                <p style="margin-bottom: 12px; color: #666;">請選擇正確的金額：</p>
-                ${amountOptions}
-            </div>
-            <div class="receipt-text">
-                <p style="margin-bottom: 8px; color: #666; font-size: 12px;">識別文字：</p>
-                <div class="ocr-text-preview">${ocrText.substring(0, 500).replace(/\n/g, '<br>')}</div>
+            <div style="padding: 0 0 16px;">
+                <p style="color: #666; margin-bottom: 12px;">識別到以下金額，請選擇：</p>
+                ${options}
             </div>
             <div class="modal-actions">
-                <button class="cancel-btn" onclick="closeReceiptResultModal()">取消</button>
+                <button class="cancel-btn" onclick="closeAmountSelectionModal()">取消</button>
             </div>
         </div>
     `;
     modal.style.display = 'flex';
 }
 
-function selectReceiptAmount(amount) {
+function selectScannedAmount(amount) {
     document.getElementById('transactionAmount').value = amount;
-    closeReceiptResultModal();
-    alert('已填入金額：$' + amount.toLocaleString());
+    closeAmountSelectionModal();
 }
 
-function closeReceiptResultModal() {
-    const modal = document.getElementById('receiptResultModal');
+function closeAmountSelectionModal() {
+    const modal = document.getElementById('amountSelectionModal');
     if (modal) modal.style.display = 'none';
-}
-
-// 提取所有可能的金額
-function extractAllAmountsFromText(text) {
-    const results = [];
-    
-    // 優先匹配的關鍵字模式（總計、合計等）
-    const priorityPatterns = [
-        { pattern: /總\s*計[：:\s]*\$?\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gi, label: '總計' },
-        { pattern: /合\s*計[：:\s]*\$?\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gi, label: '合計' },
-        { pattern: /應\s*付[：:\s]*\$?\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gi, label: '應付' },
-        { pattern: /實\s*付[：:\s]*\$?\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gi, label: '實付' },
-        { pattern: /金\s*額[：:\s]*\$?\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gi, label: '金額' },
-        { pattern: /小\s*計[：:\s]*\$?\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gi, label: '小計' },
-        { pattern: /Total[：:\s]*\$?\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gi, label: 'Total' },
-        { pattern: /Amount[：:\s]*\$?\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gi, label: 'Amount' },
-        { pattern: /NT\$\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gi, label: 'NT$' },
-        { pattern: /\$\s*(\d+(?:,\d{3})*(?:\.\d+)?)/g, label: '$' },
-        { pattern: /(\d+(?:,\d{3})*(?:\.\d+)?)\s*元/g, label: '元' }
-    ];
-    
-    const seen = new Set();
-    
-    for (const { pattern, label } of priorityPatterns) {
-        let match;
-        while ((match = pattern.exec(text)) !== null) {
-            const amountStr = match[1].replace(/,/g, '');
-            const amount = parseFloat(amountStr);
-            if (amount > 0 && amount < 1000000 && !seen.has(amount)) {
-                seen.add(amount);
-                results.push({ amount, label });
-            }
-        }
-    }
-    
-    // 按金額大小排序（通常總計是最大的）
-    results.sort((a, b) => b.amount - a.amount);
-    
-    return results.slice(0, 5); // 最多顯示 5 個
-}
-
-function extractAmountFromText(text) {
-    const amounts = extractAllAmountsFromText(text);
-    return amounts.length > 0 ? amounts[0].amount : null;
 }
 
 // QR/條碼掃描功能（使用瀏覽器內建 API）
