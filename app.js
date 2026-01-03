@@ -1138,48 +1138,162 @@ async function handleReceiptFile(event) {
             return;
         }
         
-        alert('正在掃描收據，請稍候...');
+        // 顯示掃描中提示
+        showScanningModal('正在掃描收據...');
         
         const result = await Tesseract.recognize(file, 'chi_tra+eng', {
-            logger: m => console.log(m)
+            logger: m => {
+                if (m.status === 'recognizing text') {
+                    updateScanningProgress(Math.round(m.progress * 100));
+                }
+            }
         });
         
-        console.log('OCR Result:', result.data.text);
+        hideScanningModal();
         
-        // 提取金額
-        const amount = extractAmountFromText(result.data.text);
-        if (amount) {
-            document.getElementById('transactionAmount').value = amount;
-            alert('已識別金額：' + amount);
+        const ocrText = result.data.text;
+        console.log('OCR Result:', ocrText);
+        
+        // 提取所有可能的金額
+        const amounts = extractAllAmountsFromText(ocrText);
+        
+        if (amounts.length > 0) {
+            // 顯示識別結果讓用戶選擇
+            showReceiptResultModal(ocrText, amounts);
         } else {
-            alert('無法識別金額，請手動輸入。\n\n識別文字：\n' + result.data.text.substring(0, 200));
+            alert('無法識別金額，請手動輸入。\n\n識別文字：\n' + ocrText.substring(0, 300));
         }
     } catch (error) {
+        hideScanningModal();
         console.error('Error scanning receipt:', error);
         alert('掃描失敗：' + error.message);
     }
 }
 
-function extractAmountFromText(text) {
-    // 匹配各種金額格式
-    const patterns = [
-        /總計[：:]\s*\$?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/,
-        /合計[：:]\s*\$?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/,
-        /金額[：:]\s*\$?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/,
-        /Total[：:]\s*\$?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
-        /\$\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/,
-        /NT\$?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/,
-        /(\d+(?:,\d{3})*(?:\.\d{2})?)\s*元/
+// 顯示掃描中 Modal
+function showScanningModal(message) {
+    let modal = document.getElementById('scanningModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'scanningModal';
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content" style="text-align: center; padding: 30px;">
+                <div class="scanning-spinner"></div>
+                <p id="scanningMessage">${message}</p>
+                <p id="scanningProgress">0%</p>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    document.getElementById('scanningMessage').textContent = message;
+    document.getElementById('scanningProgress').textContent = '0%';
+    modal.style.display = 'flex';
+}
+
+function updateScanningProgress(percent) {
+    const el = document.getElementById('scanningProgress');
+    if (el) el.textContent = percent + '%';
+}
+
+function hideScanningModal() {
+    const modal = document.getElementById('scanningModal');
+    if (modal) modal.style.display = 'none';
+}
+
+// 顯示收據識別結果
+function showReceiptResultModal(ocrText, amounts) {
+    let modal = document.getElementById('receiptResultModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'receiptResultModal';
+        modal.className = 'modal';
+        document.body.appendChild(modal);
+    }
+    
+    // 建立金額選項
+    let amountOptions = amounts.map((item, index) => `
+        <div class="amount-option" onclick="selectReceiptAmount(${item.amount})">
+            <span class="amount-label">${item.label}</span>
+            <span class="amount-value">$${item.amount.toLocaleString()}</span>
+        </div>
+    `).join('');
+    
+    modal.innerHTML = `
+        <div class="modal-content receipt-result-content">
+            <div class="modal-header">
+                <h3>識別結果</h3>
+                <button class="close-btn" onclick="closeReceiptResultModal()">&times;</button>
+            </div>
+            <div class="receipt-amounts">
+                <p style="margin-bottom: 12px; color: #666;">請選擇正確的金額：</p>
+                ${amountOptions}
+            </div>
+            <div class="receipt-text">
+                <p style="margin-bottom: 8px; color: #666; font-size: 12px;">識別文字：</p>
+                <div class="ocr-text-preview">${ocrText.substring(0, 500).replace(/\n/g, '<br>')}</div>
+            </div>
+            <div class="modal-actions">
+                <button class="cancel-btn" onclick="closeReceiptResultModal()">取消</button>
+            </div>
+        </div>
+    `;
+    modal.style.display = 'flex';
+}
+
+function selectReceiptAmount(amount) {
+    document.getElementById('transactionAmount').value = amount;
+    closeReceiptResultModal();
+    alert('已填入金額：$' + amount.toLocaleString());
+}
+
+function closeReceiptResultModal() {
+    const modal = document.getElementById('receiptResultModal');
+    if (modal) modal.style.display = 'none';
+}
+
+// 提取所有可能的金額
+function extractAllAmountsFromText(text) {
+    const results = [];
+    
+    // 優先匹配的關鍵字模式（總計、合計等）
+    const priorityPatterns = [
+        { pattern: /總\s*計[：:\s]*\$?\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gi, label: '總計' },
+        { pattern: /合\s*計[：:\s]*\$?\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gi, label: '合計' },
+        { pattern: /應\s*付[：:\s]*\$?\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gi, label: '應付' },
+        { pattern: /實\s*付[：:\s]*\$?\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gi, label: '實付' },
+        { pattern: /金\s*額[：:\s]*\$?\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gi, label: '金額' },
+        { pattern: /小\s*計[：:\s]*\$?\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gi, label: '小計' },
+        { pattern: /Total[：:\s]*\$?\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gi, label: 'Total' },
+        { pattern: /Amount[：:\s]*\$?\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gi, label: 'Amount' },
+        { pattern: /NT\$\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gi, label: 'NT$' },
+        { pattern: /\$\s*(\d+(?:,\d{3})*(?:\.\d+)?)/g, label: '$' },
+        { pattern: /(\d+(?:,\d{3})*(?:\.\d+)?)\s*元/g, label: '元' }
     ];
     
-    for (const pattern of patterns) {
-        const match = text.match(pattern);
-        if (match && match[1]) {
-            return parseFloat(match[1].replace(/,/g, ''));
+    const seen = new Set();
+    
+    for (const { pattern, label } of priorityPatterns) {
+        let match;
+        while ((match = pattern.exec(text)) !== null) {
+            const amountStr = match[1].replace(/,/g, '');
+            const amount = parseFloat(amountStr);
+            if (amount > 0 && amount < 1000000 && !seen.has(amount)) {
+                seen.add(amount);
+                results.push({ amount, label });
+            }
         }
     }
     
-    return null;
+    // 按金額大小排序（通常總計是最大的）
+    results.sort((a, b) => b.amount - a.amount);
+    
+    return results.slice(0, 5); // 最多顯示 5 個
+}
+
+function extractAmountFromText(text) {
+    const amounts = extractAllAmountsFromText(text);
+    return amounts.length > 0 ? amounts[0].amount : null;
 }
 
 // QR/條碼掃描功能（使用瀏覽器內建 API）
@@ -1261,31 +1375,93 @@ function handleScanResult(result) {
         scanInterval = null;
     }
     
-    // 顯示結果
-    const resultDiv = document.getElementById('qrResult');
-    const resultText = document.getElementById('qrResultText');
-    resultDiv.style.display = 'block';
-    resultText.textContent = result;
-    
-    // 嘗試從結果中提取金額
-    const amount = extractAmountFromQR(result);
-    if (amount) {
-        document.getElementById('transactionAmount').value = amount;
-        alert('已識別金額：' + amount);
-        closeQRScanner();
-    } else {
-        // 如果是網址，顯示提示
-        if (result.startsWith('http')) {
-            if (confirm('掃描到網址：\n' + result + '\n\n是否開啟？')) {
-                window.open(result, '_blank');
-            }
-        } else {
-            // 將結果填入備註
-            document.getElementById('transactionNote').value = result;
-            alert('已將掃描結果填入備註');
-            closeQRScanner();
-        }
+    // 停止相機
+    if (qrVideoStream) {
+        qrVideoStream.getTracks().forEach(track => track.stop());
+        qrVideoStream = null;
     }
+    
+    // 關閉掃描器 Modal
+    document.getElementById('qrScannerModal').style.display = 'none';
+    
+    // 顯示掃描結果 Modal
+    showQRResultModal(result);
+}
+
+// 顯示 QR/條碼掃描結果
+function showQRResultModal(result) {
+    let modal = document.getElementById('qrResultModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'qrResultModal';
+        modal.className = 'modal';
+        document.body.appendChild(modal);
+    }
+    
+    // 判斷內容類型
+    const isUrl = result.startsWith('http://') || result.startsWith('https://');
+    const amount = extractAmountFromQR(result);
+    
+    let contentType = '文字';
+    let icon = '📝';
+    if (isUrl) {
+        contentType = '網址';
+        icon = '🔗';
+    } else if (amount) {
+        contentType = '金額';
+        icon = '💰';
+    } else if (/^\d+$/.test(result)) {
+        contentType = '條碼編號';
+        icon = '📊';
+    }
+    
+    let actionButtons = '';
+    if (amount) {
+        actionButtons += `<button class="save-btn" onclick="useQRAmount(${amount})">填入金額 $${amount}</button>`;
+    }
+    if (isUrl) {
+        actionButtons += `<button class="save-btn" style="background: #3B82F6;" onclick="window.open('${result}', '_blank')">開啟網址</button>`;
+    }
+    actionButtons += `<button class="save-btn" style="background: #10B981;" onclick="useQRAsNote('${result.replace(/'/g, "\\'")}')">填入備註</button>`;
+    
+    modal.innerHTML = `
+        <div class="modal-content qr-result-modal-content">
+            <div class="modal-header">
+                <h3>${icon} 掃描結果</h3>
+                <button class="close-btn" onclick="closeQRResultModal()">&times;</button>
+            </div>
+            <div class="qr-result-body">
+                <div class="qr-result-type">
+                    <span class="type-badge">${contentType}</span>
+                </div>
+                <div class="qr-result-content">
+                    <p>${result}</p>
+                </div>
+            </div>
+            <div class="qr-result-actions">
+                ${actionButtons}
+            </div>
+            <div class="modal-actions">
+                <button class="cancel-btn" onclick="closeQRResultModal()">關閉</button>
+            </div>
+        </div>
+    `;
+    modal.style.display = 'flex';
+}
+
+function useQRAmount(amount) {
+    document.getElementById('transactionAmount').value = amount;
+    closeQRResultModal();
+}
+
+function useQRAsNote(text) {
+    document.getElementById('transactionNote').value = text;
+    closeQRResultModal();
+}
+
+function closeQRResultModal() {
+    const modal = document.getElementById('qrResultModal');
+    if (modal) modal.style.display = 'none';
 }
 
 function extractAmountFromQR(text) {
